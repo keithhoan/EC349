@@ -1,0 +1,97 @@
+---
+title: "EC349 Assignment"
+author: '2008089'
+date: "2023-12-01"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Method
+
+I applied a random forest classification model to the small datasets. While this method sacrifices interpretability, it satisfies my aim of maximising predictive power through high flexibility with reduced variance.
+
+I used classification, rather than regression, trees because user ratings, by construction, are integers on the support [1, 5]. 
+
+I chose to use random forest to mitigate the high variance associated with classification trees. A classification tree splits the feature space into *J* distinct regions; for every review that falls into region *j*, its rating is classified as the most commonly occurring rating, or class, of training observations vis-à-vis said region. These trees have high variance as a consequence of the sequential approach utilised in their construction through the top-down greedy binary recursive splitting algorithm. Beginning at the top of the tree, the data is split into two nodes using the feature that, at that particular step, generates the greatest information gain, which here is measured by the Gini index. It is defined as:
+
+$$\overset{K}{\underset{k=1}\sum} \hat p_{m,k}(1-\hat p_{m,k})$$
+
+where $\hat p_{m,k}$ is the proportion of training observations in region *m* from the *k*-th class. In the multi-class case here, the definition is extended by averaging pairwise comparisons (Hand and Till, 2001).
+
+A small value indicates the predominance of a particular class, and so a greater reduction in the Gini index entails a sharper distinction between classes with less misclassification, representing greater information gain. 
+
+Left alone, the algorithm will keep splitting to maximise information gain, resulting in a highly flexible model with low bias that would potentially change drastically with different data and fit a lot of noise. This higher variance entails greater susceptibility to overfitting, where the model generalises poorly to unseen data. Hence, there is an undesirably high prediction error, which is given by the sum of bias, variance, and irreducible error.
+
+Random forest augments bagging to reduce variance while preserving low bias. The latter randomly selects *B* different independent samples of training data with replacement, trains a tree on each sample whose distribution should reflect that of the full dataset. Each tree outputs a prediction, and the majority vote is taken. Here, I chose *B* = 64 as Oshiro et al. (2012) found no major differences from 64 trees onwards. By the law of large numbers, and assuming no correlation between trees and identical finite variance, the model variance is reduced by a factor of *B*. However, since the samples were generated from the same data, the trees’ predictions, which use the same features and possibly overlapping observations, are likely correlated, causing variance to increase. Furthermore, I oversample the data, which will increase correlation. I will discuss oversampling further in section 5. Random forest reduces this correlation to reduce variance by constructing trees based on random subsamples, as in bagging, and randomly selected features.
+
+## 2. Features
+I chose features from the dataset that were clearly relevant to user ratings, and universally applicable to all businesses, to prevent overfitting. For instance, restaurant-specific features, such as restaurant attire, were excluded as non-restaurants constitute a significant proportion of the data.
+
+I also performed sentiment analysis on the text column to generate a sentiment feature. This process took into account the polarity of the words - how positive or negative they were - and valence shifters, which qualify the meaning and/or intensity of the words (Rinker, 2021). Each review therefore had a sentiment score, with higher, positive scores representing favourable sentiments and lower, negative values unfavourable ones. As this package only analyses English text, I chose to drop the non-English reviews as these reviews constitute only 0.3% of the total dataset, and so minimal bias, if any, would be introduced.
+
+The full dataset had a significant proportion of observations with missing values. However, dropping these rows or removing the feature altogether would result in a significant loss of information. Hence, I imputed the missing values using predictive mean matching, which Schenker and Taylor (1996) and Morris et al. (2014) have empirically demonstrated to introduce minimal bias. 
+
+## 3. Results
+I use the ROC-AUC score to evaluate my model performance in light of the class imbalance in the dataset. I discuss class imbalance further in section 5. The score is computed from the area under the curve (AUC) of the Receiver Operating Characteristic (ROC) curve. In ROC space, the true positive rate (TPR), the proportion of positives correctly classified, is plotted against the false positive rate (FPR), the proportion of negatives incorrectly classified as positives. The curve therefore plots the trade-off between the TPR and the FPR for different classification thresholds, which are cut-off points used to assign a prediction to each observation (James et al., 2021). Consequently, the curve that an AUC closer to 1 indicates superior model performance. This metric is extended to the multi-class scenario through averaging pairwise comparisons (Hand and Till, 2001).
+
+For the training data, I obtained a perfect score of 1. This result is unsurprising, as the random forest model is flexible and hence capable of making almost-perfect predictions on the training data. I obtained a  score of 0.8053 on the test data, which is considered excellent (Hosmer & Lemeshow, 2000). This was obtained from averaging the AUC of the curves representing the ten pairs as depicted below.
+
+```{r rocfig, out.width="350px", fig.align="center", fig.cap="Figure 1: Plot of the ROC curves of the ten pairwise comparisons", echo=FALSE}
+knitr::include_graphics(rep("/Users/keith/Desktop/Hustle/Y3/EC349/Assignment/roc.png"))
+```
+
+Sentiment, each business's average rating, and latitude/longitude data are arguably the most important features for information gain vis-à-vis accuracy and the Gini Index, being ranked in the top five on both counts. 
+```{r imptfig, fig.align="center", fig.cap="Figure 2: Plot of feature importances vis-à-vis their contribution to improving accuracy and reducing Gini index", echo=FALSE}
+knitr::include_graphics(rep("/Users/keith/Desktop/Hustle/Y3/EC349/Assignment/varimpplot.png"))
+```
+
+## 4. Methodology
+I used the CRISP-DM methodology. It includes six sequential but iterative phases: business understanding, data understanding, data preparation, modelling, evaluation, and deployment. As a novice in data science, I chose it for its intuitive nature, adoptability, and flexibility. I had expected significant unknowns and concomitant contingencies to appear throughout the project. Therefore, I required a process that would allow me to quickly iterate through the steps, and consequently gain increasingly deeper understandings of the data and the problem to be fed into subsequent cycles. For instance, this proved useful when I initially tried to implement a classification tree model to predict user ratings. I encountered a warning that a regression tree was being built instead. Consequently, I realised that I had to revisit the data preparation stage to convert the user rating variable from numeric to factor values before restarting the modelling stage to implement the classification tree. 
+
+## 5. Challenge
+The greatest challenge I faced was the class imbalance in the dataset, as visualised below.
+	
+```{r distfig, out.width="400px", fig.align="center", fig.cap="Figure 3: Bar plot of the distribution of ratings in the data", echo=FALSE}
+load(file="/Users/keith/Desktop/Hustle/Y3/EC349/Assignment/combined_datav6.Rda.nosync.Rda")
+stars_dist <- table(combined_data$stars_review)
+options(scipen=999)
+barplot(stars_dist, 
+        xlab = "User rating",
+        ylab = "Frequency",
+        col = "skyblue")
+```
+
+5-star reviews are significantly over-represented in the data. The model would therefore be biassed towards this class. Consequently, the model may not generalise well to unseen data, performing well for 5-star reviews but underperforming for the other classes. Classification models perform better when the dataset is balanced (Kumar et al., 2021).
+
+Hence, I oversampled the rarer classes. This involves randomly selecting observations from the rarer classes, and adding it to the training dataset to achieve balanced class proportions. While this increases correlation between observations, I implemented a random forest model to mitigate this.
+
+Furthermore, class imbalance problematises the choice of evaluation metrics. For instance, accuracy, the percentage of correct classifications, becomes a misleading measure of performance because it puts more weight on the common class; a good accuracy score can be achieved by a simple model that makes a 5-star prediction for all observations in the test set (Bekkar et al., 2013). 
+
+Hence, I used the ROC-AUC score, which accounts for class imbalance and considers a model’s ability to distinguish between classes in the test set, as the evaluation metric (Japkowicz, 2013). 
+
+Word count: 1,248 
+
+# References
+
+Bekkar, M., Djemaa, H.K. and Alitouche, T.A. (2013) ‘Evaluation Measures for Models Assessment over Imbalanced Data Sets ’, *Journal of Information Engineering and Applications*, 3(10). 
+
+Hosmer, D.W. and Lemeshow, S. (2000) ‘Assessing the Fit of the Model’, in *Applied Logistic Regression*. 2nd edn. Wiley, pp. 160–164. 
+
+James, G. *et al.* (2021) *An Introduction to Statistical Learning: With Applications in R.* Boston: Springer. 
+
+Japkowicz, N. (2013) ‘Chapter 8: Assessment Metrics for Imbalanced Learning’, in H. He and Y. Ma (eds.) *Imbalanced Learning: Foundations, Algorithms, and Applications*. Wiley Online Books, pp. 187–206. 
+
+Kumar, P. *et al.* (2021) ‘Classification of Imbalanced Data: Review of Methods and Applications’, *IOP Conference Series: Materials Science and Engineering*, 1099. doi:10.1088/1757-899X/1099/1/012077. 
+
+Morris, T.P., White, I.R. and Royston, P. (2014) ‘Tuning multiple imputation by predictive mean matching and local residual draws’, *BMC Medical Research Methodology*, 14(1). doi:10.1186/1471-2288-14-75. 
+
+Oshiro, T.M., Perez, P.S. and Baranauskas, J.A. (2012) ‘How Many Trees in a Random Forest?’, *Machine Learning and Data Mining in Pattern Recognition*, pp. 154–168. doi:10.1007/978-3-642-31537-4_13. 
+
+Rinker, T.W. (2021) {*sentimentr*}: *Calculate Text Polarity Sentiment, GitHub*. Available at: https://github.com/trinker/sentimentr (Accessed: 29 November 2023). 
+
+Schenker, N. and Taylor, J.M.G. (1996) ‘Partially parametric techniques for multiple imputation’, *Computational Statistics & Data Analysis*, 22(4), pp. 425–446. doi:10.1016/0167-9473(95)00057-7.
